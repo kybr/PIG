@@ -1,0 +1,25 @@
+https://deardevices.com/2019/12/25/raspberry-pi-sysroot/
+
+got the toolchain here:
+
+https://thinkski.github.io/osx-arm-linux-toolchains/
+
+"arm-unknown-linux-gnueabihf"
+
+expects glibc
+
+https://github.com/thinkski/osx-arm-linux-toolchains
+
+had to make these links:
+
+https://github.com/abhiTronix/raspberry-pi-cross-compilers/blob/master/QT_build_instructions.md#11-setup-important-symlinks-important
+
+...to get rid of these errors:
+
+arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-cc -mfpu=vfp -march=armv6zk -mtune=arm1176jzf-s --sysroot=/Users/ky/cf/rpi-cross-compile/sysroot /usr/lib/arm-linux-gnueabihf/crti.o /usr/lib/arm-linux-gnueabihf/crt1.o  -I /Users/ky/cf/rpi-cross-compile/sysroot/usr/include/arm-linux-gnueabihf  -L /Users/ky/cf/rpi-cross-compile/sysroot/usr/lib/arm-linux-gnueabihf foo.c
+arm-unknown-linux-gnueabihf-cc: error: /usr/lib/arm-linux-gnueabihf/crti.o: No such file or directory
+arm-unknown-linux-gnueabihf-cc: error: /usr/lib/arm-linux-gnueabihf/crt1.o: No such file or directory
+
+set up SYSROOT:
+
+sshfs -o idmap=user,follow_symlinks 192.168.78.140:/ sysroot

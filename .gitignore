@@ -1,3 +1,8 @@
+
+# Specifics
+arm-unknown-linux-gnueabihf/
+sysroot/
+
 # Prerequisites
 *.d
 
