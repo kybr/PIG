@@ -1,0 +1,97 @@
+OBJS = foo.o Window.o BCM.o App.o GL.o
+BIN = foo.bin
+SDKSTAGE = sysroot
+
+LDFLAGS += -L$(SDKSTAGE)/usr/lib/arm-linux-gnueabihf
+#LDFLAGS += -L$(SDKSTAGE)/lib/arm-linux-gnueabihf
+LDFLAGS += -lrevision
+LDFLAGS += -llo
+LDFLAGS += -ldl # -lc
+LDFLAGS += -Xlinker "--sysroot=sysroot"
+LDFLAGS += -Wl,-rpath=sysroot/opt/vc/lib
+#LDFLAGS += $(SDKSTAGE)/usr/lib/arm-linux-gnueabihf/libc_nonshared.a 
+#LDFLAGS += $(SDKSTAGE)/usr/lib/arm-linux-gnueabihf/liblo.a
+
+CC=
+CC += arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-gcc
+CC += -mfpu=vfp -march=armv6zk -mtune=arm1176jzf-s
+CXX=
+CXX += arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-g++
+CXX += -std=c++14
+CXX += -mfpu=vfp -march=armv6zk -mtune=arm1176jzf-s
+
+AR=
+AR += arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-ar
+
+LD=
+LD += arm-unknown-linux-gnueabihf/bin/arm-unknown-linux-gnueabihf-ld
+
+# warning:  libbcm_host.so, needed by sysroot/opt/vc/lib/libbrcmEGL.so
+# warning: libvchiq_arm.so, needed by sysroot/opt/vc/lib/libbrcmGLESv2.so
+# warning:      libvcos.so, needed by sysroot/opt/vc/lib/libbrcmGLESv2.so
+#
+# not found (try using -rpath or -rpath-link)
+#
+# all in ... /opt/vc/lib/
+
+CFLAGS += -DSTANDALONE
+CFLAGS += -D__STDC_CONSTANT_MACROS
+CFLAGS += -D__STDC_LIMIT_MACROS
+CFLAGS += -DTARGET_POSIX
+CFLAGS += -D_LINUX
+CFLAGS += -fPIC
+CFLAGS += -DPIC
+CFLAGS += -D_REENTRANT
+CFLAGS += -D_LARGEFILE64_SOURCE
+CFLAGS += -D_FILE_OFFSET_BITS=64
+CFLAGS += -U_FORTIFY_SOURCE
+CFLAGS += -Wall
+CFLAGS += -g
+CFLAGS += -DHAVE_LIBOPENMAX=2
+CFLAGS += -DOMX
+CFLAGS += -DOMX_SKIP64BIT
+CFLAGS += -ftree-vectorize
+CFLAGS += -pipe
+CFLAGS += -DUSE_EXTERNAL_OMX
+CFLAGS += -DHAVE_LIBBCM_HOST
+CFLAGS += -DUSE_EXTERNAL_LIBBCM_HOST
+CFLAGS += -DUSE_VCHIQ_ARM
+CFLAGS += -Wno-psabi
+
+LDFLAGS += -L$(SDKSTAGE)/opt/vc/lib/
+LDFLAGS += -lbrcmGLESv2
+LDFLAGS += -lbrcmEGL
+LDFLAGS += -lopenmaxil
+LDFLAGS += -lbcm_host
+LDFLAGS += -lvcos
+LDFLAGS += -lvchiq_arm
+LDFLAGS += -lpthread
+LDFLAGS += -lrt
+LDFLAGS += -lm
+LDFLAGS += -L$(SDKSTAGE)/opt/vc/src/hello_pi/libs/ilclient
+LDFLAGS += -L$(SDKSTAGE)/opt/vc/src/hello_pi/libs/vgfont
+LDFLAGS += -L$(SDKSTAGE)/opt/vc/src/hello_pi/libs/revision
+
+INCLUDES= #################################################
+INCLUDES += -I$(SDKSTAGE)/opt/vc/include/
+INCLUDES += -I$(SDKSTAGE)/opt/vc/include/interface/vcos/pthreads
+INCLUDES += -I$(SDKSTAGE)/opt/vc/include/interface/vmcs_host/linux
+INCLUDES += -I./
+INCLUDES += -I$(SDKSTAGE)/opt/vc/src/hello_pi/libs/ilclient
+INCLUDES += -I$(SDKSTAGE)/opt/vc/src/hello_pi/libs/vgfont
+INCLUDES += -I$(SDKSTAGE)/opt/vc/src/hello_pi/libs/revision
+INCLUDES += -I$(SDKSTAGE)/usr/include
+
+all: $(BIN) $(LIB)
+
+%.o: %.c
+	$(CC) $(CFLAGS) $(INCLUDES) -g -c $< -o $@ -Wno-deprecated-declarations
+
+%.o: %.cpp
+	$(CXX) $(CFLAGS) $(INCLUDES) -g -c $< -o $@ -Wno-deprecated-declarations
+
+%.bin: $(OBJS)
+	$(CXX) -o $@ -Wl,--whole-archive $(OBJS) $(LDFLAGS) -Wl,--no-whole-archive -rdynamic
+
+%.a: $(OBJS)
+	$(AR) r $@ $^

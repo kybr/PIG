@@ -1,22 +1,19 @@
 #include "Window.hpp"
 
-#include <assert.h>
 #include <fcntl.h>
 #include <math.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#include <cassert>
+#include <cstdio>
+
 #include "EGL/egl.h"
 #include "EGL/eglext.h"
+#include "GL.hpp"  // OpenGL!
 #include "bcm_host.h"
 #include "revision.h"
-
-#define check() \
-  do {          \
-  } while (0)
-//#define check() assert(glGetError() == 0)
 
 struct ImplementationWindow {
   EGLContext context;
@@ -26,7 +23,7 @@ struct ImplementationWindow {
 
   void flip() {
     eglSwapBuffers(display, surface);
-    check();
+    check_gl_error();
   }
 
   // void make(unsigned x, unsigned y, unsigned width, unsigned height) { }
@@ -62,22 +59,22 @@ struct ImplementationWindow {
     // get an EGL display connection
     display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     assert(display != EGL_NO_DISPLAY);
-    check();
+    check_gl_error();
 
     // initialize the EGL display connection
     result = eglInitialize(display, NULL, NULL);
     assert(EGL_FALSE != result);
-    check();
+    check_gl_error();
 
     // get an appropriate EGL frame buffer configuration
     result = eglChooseConfig(display, attribute_list, &config, 1, &num_config);
     assert(EGL_FALSE != result);
-    check();
+    check_gl_error();
 
     // get an appropriate EGL frame buffer configuration
     result = eglBindAPI(EGL_OPENGL_ES_API);
     assert(EGL_FALSE != result);
-    check();
+    check_gl_error();
 
     // create an EGL rendering context
     {
@@ -87,7 +84,7 @@ struct ImplementationWindow {
           eglCreateContext(display, config, EGL_NO_CONTEXT, attribute_list);
     }
     assert(context != EGL_NO_CONTEXT);
-    check();
+    check_gl_error();
 
     // create an EGL window surface
     success = graphics_get_display_size(0 /* LCD */, &width, &height);
@@ -116,16 +113,16 @@ struct ImplementationWindow {
     nativewindow.height = height;
     vc_dispmanx_update_submit_sync(dispman_update);
 
-    check();
+    check_gl_error();
 
     surface = eglCreateWindowSurface(display, config, &nativewindow, NULL);
     assert(surface != EGL_NO_SURFACE);
-    check();
+    check_gl_error();
 
     // connect the context to the surface
     result = eglMakeCurrent(display, surface, surface, context);
     assert(EGL_FALSE != result);
-    check();
+    check_gl_error();
   }
 };
 
