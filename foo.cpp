@@ -2,6 +2,7 @@
 #include <lo/lo_cpp.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 //#include <cassert>
 #include <cstring>
@@ -26,7 +27,8 @@ typedef struct {
   GLuint uniform_scale;
   GLuint uniform_offset;
   GLuint uniform_center;
-} State;
+  GLuint uniform_time;
+} OpenGLState;
 
 static void showlog(GLint shader) {
   // Prints the compile log for a shader
@@ -44,27 +46,28 @@ static void showprogramlog(GLint shader) {
   fflush(stdout);
 }
 
-static void compile_shader(State *state) {
-  const GLchar *vshader_source =
-      "attribute vec4 vertex;"
-      "varying vec2 tcoord;"
-      "void main(void) {"
-      " vec4 pos = vertex;"
-      " gl_Position = pos;"
-      " tcoord = vertex.xy*0.5+0.5;"
-      "}";
+static void compile_shader(OpenGLState *state) {
+  const GLchar *vshader_source = R"(
+attribute vec4 vertex;
+varying vec2 tcoord;
+void main(void) {
+  vec4 pos = vertex;
+  gl_Position = pos;
+  tcoord = vertex.xy*0.5+0.5;
+}
+)";
 
   // Mandelbrot
   const GLchar *mandelbrot_fshader_source =
       "uniform vec4 color;"
       "uniform vec2 scale;"
-      "uniform vec2 centre;"
+      "uniform vec2 center;"
       "varying vec2 tcoord;"
       "void main(void) {"
       "  float intensity;"
       "  vec4 color2;"
-      "  float cr=(gl_FragCoord.x-centre.x)*scale.x;"
-      "  float ci=(gl_FragCoord.y-centre.y)*scale.y;"
+      "  float cr=(gl_FragCoord.x-center.x)*scale.x;"
+      "  float ci=(gl_FragCoord.y-center.y)*scale.y;"
       "  float ar=cr;"
       "  float ai=ci;"
       "  float tr,ti;"
@@ -136,11 +139,11 @@ static void compile_shader(State *state) {
   state->attribute_vertex = glGetAttribLocation(state->program, "vertex");
   state->uniform_scale = glGetUniformLocation(state->program, "scale");
   state->uniform_offset = glGetUniformLocation(state->program, "offset");
-  state->uniform_center = glGetUniformLocation(state->program, "centre");
+  state->uniform_center = glGetUniformLocation(state->program, "center");
   check_gl_error();
 }
 
-void more_setup(State *state, int width, int height) {
+void more_setup(OpenGLState *state, int width, int height) {
   glClearColor(0.0, 1.0, 1.0, 1.0);
 
   glGenBuffers(1, &state->buf);
@@ -189,10 +192,10 @@ void more_setup(State *state, int width, int height) {
   check_gl_error();
 }
 
-static void draw_mandelbrot(State *state, GLfloat cx, GLfloat cy,
-                            GLfloat scale) {
+static void render(OpenGLState *state, double ellapsed) {
   // Now render to the main frame buffer
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
   // Clear the background (not really necessary I suppose)
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   check_gl_error();
@@ -200,12 +203,16 @@ static void draw_mandelbrot(State *state, GLfloat cx, GLfloat cy,
   glBindBuffer(GL_ARRAY_BUFFER, state->buf);  //?
   check_gl_error();
 
-  glUseProgram(state->program);  // change from 'program'
+  glUseProgram(state->program);
   check_gl_error();
+
   // glBindTexture(GL_TEXTURE_2D,state->tex);
   // check_gl_error();
-  glUniform2f(state->uniform_scale, scale, scale);
-  glUniform2f(state->uniform_center, cx, cy);
+  glUniform2f(state->uniform_scale, 0.003, 0.003);
+  glUniform2f(state->uniform_center, 1920 / 2, 1080 / 2);
+  glUniform1f(state->uniform_time, ellapsed);
+  // glUniform2f(state->uniform_scale, scale, scale);
+  // glUniform2f(state->uniform_center, cx, cy);
   // glUniform4f(state->unif_color, 0.5, 0.5, 0.8, 1.0);
   // glUniform2f(state->unif_scale, scale, scale);
   // glUniform2f(state->unif_offset, x, y);
@@ -225,9 +232,9 @@ static void draw_mandelbrot(State *state, GLfloat cx, GLfloat cy,
   check_gl_error();
 }
 
-void recompile_shader(State *state, const char* FRAGMENT) {
+void recompile_shader(OpenGLState *state, const char *FRAGMENT) {
   GLuint fragment = glCreateShader(GL_FRAGMENT_SHADER);
-  glShaderSource(fragment, 1, (const GLchar**)&FRAGMENT, 0);
+  glShaderSource(fragment, 1, (const GLchar **)&FRAGMENT, 0);
   glCompileShader(fragment);
   check_gl_error();
 
@@ -257,7 +264,8 @@ void recompile_shader(State *state, const char* FRAGMENT) {
   state->attribute_vertex = glGetAttribLocation(program, "vertex");
   state->uniform_scale = glGetUniformLocation(program, "scale");
   state->uniform_offset = glGetUniformLocation(program, "offset");
-  state->uniform_center = glGetUniformLocation(program, "centre");
+  state->uniform_center = glGetUniformLocation(program, "center");
+  state->uniform_time = glGetUniformLocation(program, "time");
   check_gl_error();
 
   glDetachShader(program, state->vshader);
@@ -269,8 +277,18 @@ void recompile_shader(State *state, const char* FRAGMENT) {
 
 //==============================================================================
 
-struct LiveShader : App {
-  State state;
+struct ClassTimer {
+  std::chrono::high_resolution_clock::time_point begin;
+  ClassTimer() : begin(std::chrono::high_resolution_clock::now()) {}
+  double ellapsed() {
+    return std::chrono::duration<double>(
+               std::chrono::high_resolution_clock::now() - begin)
+        .count();
+  }
+};
+
+struct LiveShader : App, ClassTimer {
+  OpenGLState state;
   int cx, cy;
   float b{0};
   float r{0};
@@ -301,7 +319,7 @@ struct LiveShader : App {
       fflush(stdout);
     });
 
-    memset(&state, 0, sizeof(State));
+    memset(&state, 0, sizeof(OpenGLState));
     state.verbose = 1;
 
     compile_shader(&state);
@@ -321,19 +339,11 @@ struct LiveShader : App {
 
     if (recompile) {
       recompile = false;
-//       std::string fragment=R"(
-// const int row = 1;
-// const int column = 2;
-// const vec2 bias = vec2(0.3, 0.6);
-// )";
-
-
       recompile_shader(&state, FRAGMENT);
       check_gl_error();
     }
 
-    draw_mandelbrot(&state, cx, cy, 0.003);
-    check_gl_error();
+    render(&state, ClassTimer::ellapsed());
     flip();
     check_gl_error();
   }
