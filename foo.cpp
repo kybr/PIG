@@ -14,40 +14,22 @@
 //// OpenGL ///////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-typedef struct {
+struct OpenGLState {
   GLuint verbose;
-  GLuint vshader;
-  GLuint fshader;
-  GLuint mshader;
+  GLuint shader_vertex;
+  GLuint shader_fragment;
   GLuint program;
   GLuint tex_fb;
   GLuint tex;
-  GLuint buf;
+  GLuint buffer_vertex_array;
   GLuint attribute_vertex;
   GLuint uniform_scale;
   GLuint uniform_offset;
   GLuint uniform_center;
   GLuint uniform_time;
-} OpenGLState;
+};
 
-static void showlog(GLint shader) {
-  // Prints the compile log for a shader
-  char log[1024];
-  glGetShaderInfoLog(shader, sizeof log, NULL, log);
-  printf("%d:shader:\n%s\n", shader, log);
-  fflush(stdout);
-}
-
-static void showprogramlog(GLint shader) {
-  // Prints the information log for a program object
-  char log[1024];
-  glGetProgramInfoLog(shader, sizeof log, NULL, log);
-  printf("%d:program:\n%s\n", shader, log);
-  fflush(stdout);
-}
-
-static void compile_shader(OpenGLState *state) {
-  const GLchar *vshader_source = R"(
+const GLchar *shader_source_default_vertex = R"(
 attribute vec4 vertex;
 varying vec2 tcoord;
 void main(void) {
@@ -58,64 +40,71 @@ void main(void) {
 )";
 
   // Mandelbrot
-  const GLchar *mandelbrot_fshader_source =
-      "uniform vec4 color;"
-      "uniform vec2 scale;"
-      "uniform vec2 center;"
-      "varying vec2 tcoord;"
-      "void main(void) {"
-      "  float intensity;"
-      "  vec4 color2;"
-      "  float cr=(gl_FragCoord.x-center.x)*scale.x;"
-      "  float ci=(gl_FragCoord.y-center.y)*scale.y;"
-      "  float ar=cr;"
-      "  float ai=ci;"
-      "  float tr,ti;"
-      "  float col=0.0;"
-      "  float p=0.0;"
-      "  int i=0;"
-      "  for(int i2=1;i2<16;i2++)"
-      "  {"
-      "    tr=ar*ar-ai*ai+cr;"
-      "    ti=2.0*ar*ai+ci;"
-      "    p=tr*tr+ti*ti;"
-      "    ar=tr;"
-      "    ai=ti;"
-      "    if (p>16.0)"
-      "    {"
-      "      i=i2;"
-      "      break;"
-      "    }"
-      "  }"
-      "  color2 = vec4(float(i)*0.0625,0,0,1);"
-      "  gl_FragColor = color2;"
-      "}";
+const GLchar *shader_source_default_fragment = R"(
+uniform vec2 scale;
+uniform vec2 center;
+uniform float time;
+varying vec2 tcoord;
+void main(void) {
+  float cr = (gl_FragCoord.x - center.x) * scale.x;
+  float ci = (gl_FragCoord.y - center.y) * scale.y;
+  float ar = cr;
+  float ai = ci;
+  float tr, ti;
+  float col = 0.0;
+  float p = 0.0;
+  int i = 0;
+  for (int i2 = 1; i2 < 16; i2++) {
+    tr = ar * ar - ai * ai + cr;
+    ti = 2.0 * ar * ai + ci;
+    p = tr * tr + ti * ti;
+    ar = tr;
+    ai = ti;
+    if (p > 16.0) {
+      i = i2;
+      break;
+    }
+  }
+  gl_FragColor = vec4(float(i) * 0.0625, 0, 0, 1);
+}
+)";
 
-  state->vshader = glCreateShader(GL_VERTEX_SHADER);
-  glShaderSource(state->vshader, 1, &vshader_source, 0);
-  glCompileShader(state->vshader);
+
+static void showlog(GLint shader) {
+  // Prints the compile log for a shader
+  char log[1024];
+  glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
+  printf("%d:shader:\n%s\n", shader, log);
+  fflush(stdout);
+}
+
+static void showprogramlog(GLint shader) {
+  // Prints the information log for a program object
+  char log[1024];
+  glGetProgramInfoLog(shader, sizeof(log), nullptr, log);
+  printf("%d:program:\n%s\n", shader, log);
+  fflush(stdout);
+}
+
+static void compile_shader(OpenGLState *state) {
+
+  state->shader_vertex = glCreateShader(GL_VERTEX_SHADER);
+  glShaderSource(state->shader_vertex, 1, &shader_source_default_vertex, 0);
+  glCompileShader(state->shader_vertex);
   check_gl_error();
 
-  if (state->verbose) showlog(state->vshader);
+  if (state->verbose) showlog(state->shader_vertex);
 
-  // state->fshader = glCreateShader(GL_FRAGMENT_SHADER);
-  // glShaderSource(state->fshader, 1, &julia_fshader_source, 0);
-  // glCompileShader(state->fshader);
-  // check_gl_error();
-
-  // if (state->verbose) showlog(state->fshader);
-
-  state->mshader = glCreateShader(GL_FRAGMENT_SHADER);
-  glShaderSource(state->mshader, 1, &mandelbrot_fshader_source, 0);
-  glCompileShader(state->mshader);
+  state->shader_fragment = glCreateShader(GL_FRAGMENT_SHADER);
+  glShaderSource(state->shader_fragment, 1, &shader_source_default_fragment, 0);
+  glCompileShader(state->shader_fragment);
   check_gl_error();
 
-  if (state->verbose) showlog(state->mshader);
+  if (state->verbose) showlog(state->shader_fragment);
 
-  // mandelbrot
   state->program = glCreateProgram();
-  glAttachShader(state->program, state->vshader);
-  glAttachShader(state->program, state->mshader);
+  glAttachShader(state->program, state->shader_vertex);
+  glAttachShader(state->program, state->shader_fragment);
   glLinkProgram(state->program);
   check_gl_error();
 
@@ -126,15 +115,14 @@ void main(void) {
     GLint result = 0;
     glGetProgramiv(state->program, GL_LINK_STATUS, &result);
     if (result == GL_TRUE) {
-      glDetachShader(state->program, state->vshader);
-      glDetachShader(state->program, state->mshader);
+      glDetachShader(state->program, state->shader_vertex);
+      glDetachShader(state->program, state->shader_fragment);
     }
   }
 
   // save GPU memory
-  // glDeleteShader(state->vshader);
-  glDeleteShader(state->fshader);
-  glDeleteShader(state->mshader);
+  // glDeleteShader(state->shader_vertex);
+  glDeleteShader(state->shader_fragment);
 
   state->attribute_vertex = glGetAttribLocation(state->program, "vertex");
   state->uniform_scale = glGetUniformLocation(state->program, "scale");
@@ -146,7 +134,7 @@ void main(void) {
 void more_setup(OpenGLState *state, int width, int height) {
   glClearColor(0.0, 1.0, 1.0, 1.0);
 
-  glGenBuffers(1, &state->buf);
+  glGenBuffers(1, &state->buffer_vertex_array);
 
   check_gl_error();
 
@@ -182,7 +170,7 @@ void more_setup(OpenGLState *state, int width, int height) {
                                         -1.0, 1.0,  1.0, 1.0};
 
   // Upload vertex data to a buffer
-  glBindBuffer(GL_ARRAY_BUFFER, state->buf);
+  glBindBuffer(GL_ARRAY_BUFFER, state->buffer_vertex_array);
   glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_data), vertex_data,
                GL_STATIC_DRAW);
 
@@ -200,7 +188,7 @@ static void render(OpenGLState *state, double ellapsed) {
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   check_gl_error();
 
-  glBindBuffer(GL_ARRAY_BUFFER, state->buf);  //?
+  glBindBuffer(GL_ARRAY_BUFFER, state->buffer_vertex_array);  //?
   check_gl_error();
 
   glUseProgram(state->program);
@@ -209,7 +197,7 @@ static void render(OpenGLState *state, double ellapsed) {
   // glBindTexture(GL_TEXTURE_2D,state->tex);
   // check_gl_error();
   glUniform2f(state->uniform_scale, 0.003, 0.003);
-  glUniform2f(state->uniform_center, 1920 / 2, 1080 / 2);
+  glUniform2f(state->uniform_center, 1920 / 2.0, 1080 / 2.0);
   glUniform1f(state->uniform_time, ellapsed);
   // glUniform2f(state->uniform_scale, scale, scale);
   // glUniform2f(state->uniform_center, cx, cy);
@@ -241,7 +229,7 @@ void recompile_shader(OpenGLState *state, const char *FRAGMENT) {
   if (state->verbose) showlog(fragment);
 
   GLuint program = glCreateProgram();
-  glAttachShader(program, state->vshader);  // vertex already compiled
+  glAttachShader(program, state->shader_vertex);  // vertex already compiled
   glAttachShader(program, fragment);
   glLinkProgram(program);
   check_gl_error();
@@ -252,7 +240,7 @@ void recompile_shader(OpenGLState *state, const char *FRAGMENT) {
     GLint result = 0;
     glGetProgramiv(program, GL_LINK_STATUS, &result);
     if (result != GL_TRUE) {
-      glDetachShader(program, state->vshader);
+      glDetachShader(program, state->shader_vertex);
       glDetachShader(program, fragment);
       glDeleteShader(fragment);
       glDeleteProgram(program);
@@ -268,7 +256,7 @@ void recompile_shader(OpenGLState *state, const char *FRAGMENT) {
   state->uniform_time = glGetUniformLocation(program, "time");
   check_gl_error();
 
-  glDetachShader(program, state->vshader);
+  glDetachShader(program, state->shader_vertex);
   glDetachShader(program, fragment);
   glDeleteShader(fragment);
   glDeleteProgram(state->program);
