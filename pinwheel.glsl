@@ -5,8 +5,9 @@ const vec2 bias = vec2(0.3, 0.6);
 // uniform vec4 color;  
 // uniform vec2 scale;  
 // uniform vec2 centre;  
+uniform sampler2D texture;
 uniform float time;  
-varying vec2 tcoord;  
+varying vec2 texture_coordinate;
 
 void main(void) {  
   vec2 center = vec2(1920.0 / 2.0 + 100.0, 1080.0 / 2.0 + 300.0);
@@ -24,5 +25,7 @@ void main(void) {
   vec2 width = vec2(0.5, 0.5); // normalized
   float a = step(width.x, mod(phase.x + angle, period.x) / period.x);
   float b = step(width.y, mod(phase.y + radius, period.y) / period.y);
-  gl_FragColor = vec4(a * b + (1.0 - b) * (1.0 - a)); // xor!
+  vec4 previous = texture2D(texture, texture_coordinate);
+  vec4 pinwheel = vec4(a * b + (1.0 - b) * (1.0 - a)); // xor!
+  gl_FragColor = mix(pinwheel, previous, 0.);
 }

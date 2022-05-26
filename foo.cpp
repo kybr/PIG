@@ -4,7 +4,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
-//#include <cassert>
 #include <cstring>
 
 #include "App.hpp"
@@ -15,36 +14,43 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 struct OpenGLState {
+  GLuint program_copy;
+  GLuint program_copy_attribute_vertex;
+  GLuint program_copy_uniform_texture;
+
   GLuint verbose;
   GLuint shader_vertex;
   GLuint shader_fragment;
+  GLuint shader_fragment_copy;
   GLuint program;
-  GLuint tex_fb;
-  GLuint tex;
+  GLuint texture_framebuffer;
+  GLuint texture;
   GLuint buffer_vertex_array;
   GLuint attribute_vertex;
   GLuint uniform_scale;
   GLuint uniform_offset;
   GLuint uniform_center;
   GLuint uniform_time;
+  GLuint uniform_texture;
 };
 
 const GLchar *shader_source_default_vertex = R"(
 attribute vec4 vertex;
-varying vec2 tcoord;
+varying vec2 texture_coordinate;
 void main(void) {
   vec4 pos = vertex;
   gl_Position = pos;
-  tcoord = vertex.xy*0.5+0.5;
+  texture_coordinate = vertex.xy*0.5+0.5;
 }
 )";
 
-  // Mandelbrot
+// Mandelbrot
 const GLchar *shader_source_default_fragment = R"(
 uniform vec2 scale;
 uniform vec2 center;
 uniform float time;
-varying vec2 tcoord;
+uniform sampler2D texture;
+varying vec2 texture_coordinate;
 void main(void) {
   float cr = (gl_FragCoord.x - center.x) * scale.x;
   float ci = (gl_FragCoord.y - center.y) * scale.y;
@@ -69,7 +75,6 @@ void main(void) {
 }
 )";
 
-
 static void showlog(GLint shader) {
   // Prints the compile log for a shader
   char log[1024];
@@ -87,7 +92,6 @@ static void showprogramlog(GLint shader) {
 }
 
 static void compile_shader(OpenGLState *state) {
-
   state->shader_vertex = glCreateShader(GL_VERTEX_SHADER);
   glShaderSource(state->shader_vertex, 1, &shader_source_default_vertex, 0);
   glCompileShader(state->shader_vertex);
@@ -128,6 +132,8 @@ static void compile_shader(OpenGLState *state) {
   state->uniform_scale = glGetUniformLocation(state->program, "scale");
   state->uniform_offset = glGetUniformLocation(state->program, "offset");
   state->uniform_center = glGetUniformLocation(state->program, "center");
+  state->uniform_time = glGetUniformLocation(state->program, "time");
+  state->uniform_texture = glGetUniformLocation(state->program, "texture");
   check_gl_error();
 }
 
@@ -138,28 +144,31 @@ void more_setup(OpenGLState *state, int width, int height) {
 
   check_gl_error();
 
-  // Prepare a texture image
-  glGenTextures(1, &state->tex);
-  check_gl_error();
-  glBindTexture(GL_TEXTURE_2D, state->tex);
-  check_gl_error();
-  // glActiveTexture(0)
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB,
-               GL_UNSIGNED_SHORT_5_6_5, 0);
-  check_gl_error();
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  check_gl_error();
-  // Prepare a framebuffer for rendering
-  glGenFramebuffers(1, &state->tex_fb);
-  check_gl_error();
-  glBindFramebuffer(GL_FRAMEBUFFER, state->tex_fb);
-  check_gl_error();
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                         state->tex, 0);
-  check_gl_error();
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  check_gl_error();
+  //
+  {
+    // Prepare a texture image
+    glGenTextures(1, &state->texture);
+    check_gl_error();
+    glBindTexture(GL_TEXTURE_2D, state->texture);
+    check_gl_error();
+    // glActiveTexture(0)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB,
+                 GL_UNSIGNED_SHORT_5_6_5, 0);
+    check_gl_error();
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    check_gl_error();
+    // Prepare a framebuffer for rendering
+    glGenFramebuffers(1, &state->texture_framebuffer);
+    check_gl_error();
+    glBindFramebuffer(GL_FRAMEBUFFER, state->texture_framebuffer);
+    check_gl_error();
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                           state->texture, 0);
+    check_gl_error();
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    check_gl_error();
+  }
 
   // Prepare viewport
   glViewport(0, 0, width, height);
@@ -180,9 +189,14 @@ void more_setup(OpenGLState *state, int width, int height) {
   check_gl_error();
 }
 
-static void render(OpenGLState *state, double ellapsed) {
+static void render(OpenGLState *state, double ellapsed, bool render_to_texture) {
   // Now render to the main frame buffer
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  if (render_to_texture) {
+    glBindFramebuffer(GL_FRAMEBUFFER, state->texture_framebuffer);
+  }
+  else {
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  }
 
   // Clear the background (not really necessary I suppose)
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -194,26 +208,38 @@ static void render(OpenGLState *state, double ellapsed) {
   glUseProgram(state->program);
   check_gl_error();
 
-  // glBindTexture(GL_TEXTURE_2D,state->tex);
-  // check_gl_error();
+  if (render_to_texture) {
+    glBindTexture(GL_TEXTURE_2D, state->texture);
+    check_gl_error();
+  }
   glUniform2f(state->uniform_scale, 0.003, 0.003);
   glUniform2f(state->uniform_center, 1920 / 2.0, 1080 / 2.0);
   glUniform1f(state->uniform_time, ellapsed);
-  // glUniform2f(state->uniform_scale, scale, scale);
-  // glUniform2f(state->uniform_center, cx, cy);
-  // glUniform4f(state->unif_color, 0.5, 0.5, 0.8, 1.0);
-  // glUniform2f(state->unif_scale, scale, scale);
-  // glUniform2f(state->unif_offset, x, y);
-  // glUniform2f(state->unif_centre, cx, cy);
-  // glUniform1i(state->unif_tex, 0); // I don't really understand this
-  // part, perhaps it relates to active texture?
+  glUniform1i(state->uniform_texture, 0);
   check_gl_error();
 
   glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
   check_gl_error();
 
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
-  glUseProgram(0);
+  // glBindBuffer(GL_ARRAY_BUFFER, 0);
+  // glUseProgram(0);
+  // glFlush();
+  // glFinish();
+  // check_gl_error();
+
+  if (render_to_texture) {
+    // put the texture onto the screen now....
+    //
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);  // render to the screen
+    glUseProgram(state->program_copy);
+    check_gl_error();
+    glBindTexture(GL_TEXTURE_2D, state->texture);
+    check_gl_error();
+    glUniform1i(state->program_copy_uniform_texture, 0);
+    check_gl_error();
+    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+    check_gl_error();
+  }
 
   glFlush();
   glFinish();
@@ -254,6 +280,7 @@ void recompile_shader(OpenGLState *state, const char *FRAGMENT) {
   state->uniform_offset = glGetUniformLocation(program, "offset");
   state->uniform_center = glGetUniformLocation(program, "center");
   state->uniform_time = glGetUniformLocation(program, "time");
+  state->uniform_texture = glGetUniformLocation(program, "texture");
   check_gl_error();
 
   glDetachShader(program, state->shader_vertex);
@@ -261,6 +288,73 @@ void recompile_shader(OpenGLState *state, const char *FRAGMENT) {
   glDeleteShader(fragment);
   glDeleteProgram(state->program);
   state->program = program;
+}
+
+void compile_copy_shader(OpenGLState *state) {
+  const GLchar *shader_source_copy_vertex = R"(
+attribute vec4 a_Position;
+varying highp vec2 v_TexCoordinate;
+void main() {
+  v_TexCoordinate = a_Position.xy * 0.5 + 0.5;
+  // v_TexCoordinate.x = 1.0 - v_TexCoordinate.x;
+  gl_Position = a_Position;
+}
+)";
+
+  GLuint vertex = glCreateShader(GL_VERTEX_SHADER);
+  glShaderSource(vertex, 1, &shader_source_copy_vertex, 0);
+  glCompileShader(vertex);
+  check_gl_error();
+
+  if (state->verbose) showlog(state->shader_vertex);
+
+  const GLchar *shader_source_copy_fragment = R"(
+uniform sampler2D u_Texture;
+varying highp vec2 v_TexCoordinate;
+void main() {
+  gl_FragColor = texture2D(u_Texture, v_TexCoordinate);
+}
+)";
+
+  GLuint fragment = glCreateShader(GL_FRAGMENT_SHADER);
+  glShaderSource(fragment, 1, &shader_source_copy_fragment, 0);
+  glCompileShader(fragment);
+  check_gl_error();
+
+  if (state->verbose) showlog(fragment);
+
+  GLuint program = glCreateProgram();
+  glAttachShader(program, vertex);
+  glAttachShader(program, fragment);
+  glLinkProgram(program);
+  check_gl_error();
+
+  if (state->verbose) showprogramlog(program);
+
+  {
+    GLint result = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &result);
+    if (result != GL_TRUE) {
+      glDetachShader(program, vertex);
+      glDetachShader(program, fragment);
+      glDeleteShader(fragment);
+      glDeleteProgram(program);
+      return;
+    }
+  }
+
+  state->program_copy_attribute_vertex =
+      glGetAttribLocation(program, "a_Position");
+  state->program_copy_uniform_texture =
+      glGetUniformLocation(program, "u_Texture");
+  check_gl_error();
+
+  glDetachShader(program, vertex);
+  glDetachShader(program, fragment);
+  glDeleteShader(fragment);
+  glDeleteShader(vertex);
+  glDeleteProgram(state->program_copy);
+  state->program_copy = program;
 }
 
 //==============================================================================
@@ -277,17 +371,19 @@ struct ClassTimer {
 
 struct LiveShader : App, ClassTimer {
   OpenGLState state;
-  int cx, cy;
-  float b{0};
-  float r{0};
   std::atomic<bool> recompile{false};
+  bool render_to_texture = false;
 
   char FRAGMENT[65536];
 
   void setup() {
-    add_method("/r", "f", [this](lo_arg **argv, int) {
-      r = argv[0]->f;
-      //
+    add_method("/t", "i", [this](lo_arg **argv, int) {
+      render_to_texture = argv[0]->i != 0;
+      if (render_to_texture)
+        printf("Rendering to texture\n");
+      else
+        printf("Rendering to directly to screen\n");
+      fflush(stdout);
     });
 
     add_method("/s", "ib", [this](lo_arg **argv, int) {
@@ -312,26 +408,18 @@ struct LiveShader : App, ClassTimer {
 
     compile_shader(&state);
     more_setup(&state, width(), height());
-
-    cx = width() / 2;
-    cy = height() / 2;
+    compile_copy_shader(&state);
   }
 
   void draw() {
-    // glClearColor(r, 1.0, b, 1.0);
-    // b += 0.01;
-    // if (b >= 1) b -= 1;
-    // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    // glFlush();
-    // glFinish();
-
     if (recompile) {
       recompile = false;
       recompile_shader(&state, FRAGMENT);
       check_gl_error();
     }
 
-    render(&state, ClassTimer::ellapsed());
+    render(&state, ClassTimer::ellapsed(), render_to_texture);
+
     flip();
     check_gl_error();
   }
