@@ -9,6 +9,10 @@
 #include "App.hpp"
 #include "GL.hpp"
 
+int ROW = 0, COLUMN = 0; // location within the 16 displays
+int WIDTH = 1920, HEIGHT = 1080; // of each screen
+int BIAS_X = 0, BIAS_Y = 0; // offset of each screen in pixels
+
 ///////////////////////////////////////////////////////////////////////////////
 //// OpenGL ///////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -19,19 +23,21 @@ struct OpenGLState {
   GLuint program_copy_uniform_texture;
 
   GLuint verbose;
-  GLuint shader_vertex;
-  GLuint shader_fragment;
   GLuint shader_fragment_copy;
-  GLuint program;
   GLuint texture_framebuffer;
   GLuint texture;
+
   GLuint buffer_vertex_array;
+
+  GLuint program;
+  GLuint shader_vertex;
+  GLuint shader_fragment;
   GLuint attribute_vertex;
-  GLuint uniform_scale;
-  GLuint uniform_offset;
-  GLuint uniform_center;
-  GLuint uniform_time;
   GLuint uniform_texture;
+  GLuint uniform_time;
+  GLuint uniform_position;
+  GLuint uniform_size;
+  GLuint uniform_bias;
 };
 
 const GLchar *shader_source_default_vertex = R"(
@@ -46,14 +52,15 @@ void main(void) {
 
 // Mandelbrot
 const GLchar *shader_source_default_fragment = R"(
-uniform vec2 scale;
-uniform vec2 center;
-uniform float time;
 uniform sampler2D texture;
+uniform float time;  
+uniform ivec2 position;  
+uniform ivec2 size;       
+uniform ivec2 bias;              
 varying vec2 texture_coordinate;
 void main(void) {
-  float cr = (gl_FragCoord.x - center.x) * scale.x;
-  float ci = (gl_FragCoord.y - center.y) * scale.y;
+  float cr = (gl_FragCoord.x) * 0.003;
+  float ci = (gl_FragCoord.y) * 0.003;
   float ar = cr;
   float ai = ci;
   float tr, ti;
@@ -129,11 +136,11 @@ static void compile_shader(OpenGLState *state) {
   glDeleteShader(state->shader_fragment);
 
   state->attribute_vertex = glGetAttribLocation(state->program, "vertex");
-  state->uniform_scale = glGetUniformLocation(state->program, "scale");
-  state->uniform_offset = glGetUniformLocation(state->program, "offset");
-  state->uniform_center = glGetUniformLocation(state->program, "center");
-  state->uniform_time = glGetUniformLocation(state->program, "time");
   state->uniform_texture = glGetUniformLocation(state->program, "texture");
+  state->uniform_time = glGetUniformLocation(state->program, "time");
+  state->uniform_position = glGetUniformLocation(state->program, "position");
+  state->uniform_size = glGetUniformLocation(state->program, "size");
+  state->uniform_bias = glGetUniformLocation(state->program, "bias");
   check_gl_error();
 }
 
@@ -212,10 +219,13 @@ static void render(OpenGLState *state, double ellapsed, bool render_to_texture) 
     glBindTexture(GL_TEXTURE_2D, state->texture);
     check_gl_error();
   }
-  glUniform2f(state->uniform_scale, 0.003, 0.003);
-  glUniform2f(state->uniform_center, 1920 / 2.0, 1080 / 2.0);
-  glUniform1f(state->uniform_time, ellapsed);
+  // glUniform2f(state->uniform_scale, 0.003, 0.003);
+  // glUniform2f(state->uniform_center, 1920 / 2.0, 1080 / 2.0);
   glUniform1i(state->uniform_texture, 0);
+  glUniform1f(state->uniform_time, ellapsed);
+  glUniform2i(state->uniform_position, 0, 0);
+  glUniform2i(state->uniform_size, 1920, 1080);
+  glUniform2i(state->uniform_bias, 0, 0);
   check_gl_error();
 
   glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
@@ -275,12 +285,12 @@ void recompile_shader(OpenGLState *state, const char *FRAGMENT) {
   }
 
   // XXX need to automatically figure out these...
-  state->attribute_vertex = glGetAttribLocation(program, "vertex");
-  state->uniform_scale = glGetUniformLocation(program, "scale");
-  state->uniform_offset = glGetUniformLocation(program, "offset");
-  state->uniform_center = glGetUniformLocation(program, "center");
-  state->uniform_time = glGetUniformLocation(program, "time");
-  state->uniform_texture = glGetUniformLocation(program, "texture");
+  state->attribute_vertex = glGetAttribLocation(state->program, "vertex");
+  state->uniform_texture = glGetUniformLocation(state->program, "texture");
+  state->uniform_time = glGetUniformLocation(state->program, "time");
+  state->uniform_position = glGetUniformLocation(state->program, "position");
+  state->uniform_size = glGetUniformLocation(state->program, "size");
+  state->uniform_bias = glGetUniformLocation(state->program, "bias");
   check_gl_error();
 
   glDetachShader(program, state->shader_vertex);
@@ -398,10 +408,19 @@ struct LiveShader : App, ClassTimer {
       recompile = true;
     });
 
-    add_method(nullptr, nullptr, [](lo_arg **argv, int) {
-      printf("got an OSC message\n");
-      fflush(stdout);
+    add_method("/bias", "iiii", [this](lo_arg **argv, int) {
+      // XXX RC versus XY ?? order inconsistant
+      if (argv[0]->i == ROW)
+        if (argv[1]->i == COLUMN) {
+	  BIAS_X = argv[2]->i;
+	  BIAS_Y = argv[3]->i;
+	}
     });
+
+    //add_method(nullptr, nullptr, [](lo_arg **argv, int) {
+    //  printf("got an OSC message\n");
+    //  fflush(stdout);
+    //});
 
     memset(&state, 0, sizeof(OpenGLState));
     state.verbose = 1;

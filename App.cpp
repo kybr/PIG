@@ -16,6 +16,22 @@ void App::run() {
     else
       system("tvservice -p");
   });
+
+  add_method("/system", "s", [this](lo_arg **argv, int) {
+    printf("system(%s) exited with %d\n", &argv[0]->s, system(&argv[0]->s));
+    fflush(stdout);
+  });
+
+  add_method("/say", "s", [this](lo_arg **argv, int) {
+    printf("%s", &argv[0]->s);
+  });
+  add_method("/newline", "", [this](lo_arg **argv, int) {
+    printf("\n");
+  });
+  add_method("/flush", "", [this](lo_arg **argv, int) {
+    fflush(stdout);
+  });
+
   setup();
   lo::ServerThread::start();
   while (!done) draw();

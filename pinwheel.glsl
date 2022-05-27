@@ -1,16 +1,12 @@
-const int row = 1;
-const int column = 2;
-const vec2 bias = vec2(0.3, 0.6);
-
-// uniform vec4 color;  
-// uniform vec2 scale;  
-// uniform vec2 centre;  
 uniform sampler2D texture;
 uniform float time;  
+uniform ivec2 position;  
+uniform ivec2 size;  
+uniform ivec2 bias;  
 varying vec2 texture_coordinate;
 
 void main(void) {  
-  vec2 center = vec2(1920.0 / 2.0 + 100.0, 1080.0 / 2.0 + 300.0);
+  vec2 center = vec2(size.x / 2 + 100, size.y / 2 + 300);
   vec2 vec = center - gl_FragCoord.xy;
   float radius = length(vec);
   float angle = degrees(atan(vec.x, vec.y));
